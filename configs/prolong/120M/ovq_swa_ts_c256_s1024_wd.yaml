@@ -1,0 +1,30 @@
+model:
+  model_class_path: model.rwkv7_backbone.RWKV7BackboneForCausalLM
+  token_mixer: ovq
+  vocab_size: 50304
+  num_hidden_layers: 12
+  num_attention_heads: 6
+  hidden_size: 768
+  ffn_expansion: 4
+  use_value_residual: 1
+  use_skip_connections: 0
+  use_block_lambdas: 0
+  logit_softcap: 0
+  use_l2wrap: 0
+  use_tokenshift_att: 1
+  use_tokenshift_ffn: 1
+  rope_theta: 10000
+  rope_partial_dim: 0
+
+  alt_layer_every: 2
+  alt_rope_partial_dim: 128
+
+  ovq_window_size: 256
+  ovq_chunk_size: 256
+  ovq_max_centroids: 1024
+  ovq_normalize_centroids: 0
+  ovq_use_min_state_size: 0
+  ovq_use_counts_for_lr_only: 0
+  ovq_use_delta_rule: 0
+  param_dtype: bfloat16
+  residual_scale: 1.0

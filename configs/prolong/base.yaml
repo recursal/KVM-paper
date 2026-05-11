@@ -1,0 +1,29 @@
+model:
+  mup_base_dim: 768
+
+train:
+  init_seed: 0
+  tokenizer: gpt2
+  train_data:
+    data_packing: cram
+    dataset: 'Seerkfang/prolong-64k-512-new'
+    device_batch_size: 8
+    sequence_length: 8192
+    shuffle_seed: 42
+  val_data:
+    data_packing: pad
+    dataset: 'robbiegwaldd/dclm-10B'
+    device_batch_size: 16
+    min_document_chars: 4096
+    sequence_length: 4096
+    shuffle_seed: 0
+  val_tokens: 10485760
+  wandb: speedtrain_prolong
+  optimizer_defaults:
+    adam:
+      name: adam
+      args:
+        lr: 2e-3
+        beta1: 0.9
+        beta2: 0.95
+        weight_decay: 2e-1

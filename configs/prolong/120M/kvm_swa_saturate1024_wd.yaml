@@ -1,0 +1,36 @@
+model:
+  model_class_path: model.rwkv7_backbone.RWKV7BackboneForCausalLM
+  token_mixer: kvm
+  vocab_size: 50304
+  num_hidden_layers: 12
+  num_attention_heads: 6
+  hidden_size: 768
+  ffn_expansion: 4
+  use_value_residual: 1
+  use_skip_connections: 0
+  use_block_lambdas: 0
+  logit_softcap: 0
+  use_l2wrap: 0
+  use_tokenshift_att: 1
+  use_tokenshift_ffn: 1
+  rope_theta: 10000
+  rope_partial_dim: 64
+
+  alt_layer_every: 2
+  alt_rope_partial_dim: 128
+  
+  sink_len: 1
+  chunk_len: 256
+  n_max_d_chunks: 10000
+  n_bswa_chunks: 2
+  swa_window_size: 256
+  state_budget_mode: kvm_saturation
+  state_growth_factor: 1.0
+  state_growth_exponent: 0.5
+  state_round_down: 1
+  state_min_len: 1
+  state_saturation_n: 1024
+  param_dtype: bfloat16
+  residual_scale: 1.0
+
+  kvm_apply_merge_gate_to_initial_state: 0

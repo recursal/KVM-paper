@@ -1,0 +1,21 @@
+model:
+  model_class_path: model.rwkv7_backbone.RWKV7BackboneForCausalLM
+  token_mixer: gptalpha
+  vocab_size: 50304
+  num_hidden_layers: 24
+  num_attention_heads: 8
+  hidden_size: 1024
+  ffn_expansion: 4
+  use_skip_connections: 0
+  use_block_lambdas: 0
+  logit_softcap: 0
+  use_l2wrap: 0
+  use_tokenshift_att: 1
+  use_tokenshift_ffn: 1
+  rope_partial_dim: 64
+
+  alt_layer_every: 2
+  alt_rope_partial_dim: 128
+  swa_window_size: 256
+
+  residual_scale: 0.5

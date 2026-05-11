@@ -1,0 +1,15 @@
+train:
+  warmup_iters: 200
+  warmdown_type: linear
+  num_iterations: 15000
+  val_loss_every: 625
+  warmdown_iters: 14800
+  warmdown_min_ratio: 0.0
+  optimizer_defaults:
+    adam:
+      name: adam
+      args:
+        lr: 1.26491e-3
+        beta1: 0.9
+        beta2: 0.95
+        weight_decay: 1.26491e-1

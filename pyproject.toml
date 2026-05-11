@@ -1,0 +1,87 @@
+[project]
+name = "speedtrain"
+version = "0.1.0"
+description = "Long-context training experiments with adaptive state sizes and interchangeable token mixers."
+readme = "README.md"
+requires-python = "==3.12.*"
+dependencies = [
+  "datasets==4.6.1",
+  "einops==0.8.2",
+  "matplotlib==3.10.8",
+  "numpy==1.26.4",
+  "pandas==3.0.1",
+  "pytorch-lightning==2.6.1",
+  "pyrwkv-tokenizer==0.9.1",
+  "pyyaml==6.0.3",
+  "ray==2.54.0",
+  "seaborn==0.13.2",
+  "tiktoken==0.12.0",
+  "torchmetrics==1.9.0",
+  "tqdm==4.67.3",
+  "transformers==5.3.0",
+  "wandb==0.25.0",
+  "zarr==3.1.5",
+]
+
+[project.optional-dependencies]
+cu128 = [
+  "torch==2.9.1",
+  "torchaudio==2.9.1",
+  "torchvision==0.24.1",
+]
+flash-attention = [
+  "flash-attn==2.8.3",
+  "ninja==1.13.0",
+  "packaging==26.0",
+  "psutil==7.2.2",
+]
+mamba-cu128 = [
+  "mamba-ssm[causal-conv1d]==2.3.1",
+]
+rocm71 = [
+  "torch @ https://repo.radeon.com/rocm/manylinux/rocm-rel-7.1/torch-2.8.0%2Brocm7.1.0.lw.git7a520360-cp312-cp312-linux_x86_64.whl",
+  "torchaudio @ https://repo.radeon.com/rocm/manylinux/rocm-rel-7.1/torchaudio-2.8.0%2Brocm7.1.0.git6e1c7fe9-cp312-cp312-linux_x86_64.whl",
+  "torchvision @ https://repo.radeon.com/rocm/manylinux/rocm-rel-7.1/torchvision-0.23.0%2Brocm7.1.0.git824e8c87-cp312-cp312-linux_x86_64.whl",
+  "triton @ https://repo.radeon.com/rocm/manylinux/rocm-rel-7.1/triton-3.4.0%2Brocm7.1.0.gitf9e5bf54-cp312-cp312-linux_x86_64.whl",
+]
+rocm72 = [
+  "torch @ https://repo.radeon.com/rocm/manylinux/rocm-rel-7.2/torch-2.9.1%2Brocm7.2.0.lw.git7e1940d4-cp312-cp312-linux_x86_64.whl",
+  "torchaudio @ https://repo.radeon.com/rocm/manylinux/rocm-rel-7.2/torchaudio-2.9.0%2Brocm7.2.0.gite3c6ee2b-cp312-cp312-linux_x86_64.whl",
+  "torchvision @ https://repo.radeon.com/rocm/manylinux/rocm-rel-7.2/torchvision-0.24.0%2Brocm7.2.0.gitb919bd0c-cp312-cp312-linux_x86_64.whl",
+  "triton @ https://repo.radeon.com/rocm/manylinux/rocm-rel-7.2/triton-3.5.1%2Brocm7.2.0.gita272dfa8-cp312-cp312-linux_x86_64.whl",
+]
+rwkv-kernels = [
+  "flash-linear-attention==0.4.1",
+]
+
+[tool.uv]
+package = false
+no-build-isolation-package = ["flash-attn"]
+conflicts = [
+  [
+    { extra = "cu128" },
+    { extra = "rocm71" },
+  ],
+  [
+    { extra = "cu128" },
+    { extra = "rocm72" },
+  ],
+  [
+    { extra = "rocm71" },
+    { extra = "rocm72" },
+  ],
+]
+
+[[tool.uv.dependency-metadata]]
+name = "flash-attn"
+requires-dist = ["torch", "einops"]
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu128", extra = "cu128" }]
+torchaudio = [{ index = "pytorch-cu128", extra = "cu128" }]
+torchvision = [{ index = "pytorch-cu128", extra = "cu128" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
