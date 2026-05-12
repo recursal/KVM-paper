@@ -1,7 +1,7 @@
 # Key-Value Means 
 ##  Transformers with Expandable Block-Recurrent Compressed Memory
 
-Paper link: https://arxiv.org/abs/FIXME
+Paper link: https://arxiv.org/abs/2605.09877
 
 Checkpoints: https://huggingface.co/collections/recursal/key-value-means
 
@@ -23,7 +23,7 @@ It accomplishes this by maintaining both a Block Sliding Window of Attention as 
     <img src="assets/attention_mask.png" height=420 alt="Key-Value Means Attention Masking" /> 
 </div>
 
-Please see the Key-Value Means paper at https://arxiv.org/abs/FIXME for more details.
+Please see the Key-Value Means paper at https://arxiv.org/abs/2605.09877 for more details.
 
 ## What's included in this repository
 
@@ -63,5 +63,13 @@ Example training scripts are provided in `scripts/training_runs.sh` This directo
 If you use this code or find our work valuable, please consider citing Key-Value Means:
 
 ```bibtex
-FIXME
+@misc{goldstein2026keyvaluemeans,
+      title={Key-Value Means}, 
+      author={Daniel Goldstein and Eugene Cheah},
+      year={2026},
+      eprint={2605.09877},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2605.09877}, 
+}
 ```
