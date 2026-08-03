@@ -24,6 +24,18 @@ class ValueResidualMixin(nn.Module):
         self.layer_idx = layer_idx
         self.config = config
         self.num_attention_heads = config.num_attention_heads
+        self.num_key_value_heads = (
+            config.num_key_value_heads
+            if config.num_key_value_heads is not None
+            else config.num_attention_heads
+        )
+        if self.num_key_value_heads <= 0:
+            raise ValueError("num_key_value_heads must be positive")
+        if self.num_attention_heads % self.num_key_value_heads:
+            raise ValueError(
+                "num_attention_heads must be divisible by num_key_value_heads"
+            )
+        self.kv_group_size = self.num_attention_heads // self.num_key_value_heads
         self.hidden_size = config.hidden_size
         self.d_qk_head = (
             config.d_qk_head or config.d_head or (config.hidden_size // config.num_attention_heads)
@@ -31,8 +43,14 @@ class ValueResidualMixin(nn.Module):
         self.d_v_head = (
             config.d_v_head or config.d_head or (config.hidden_size // config.num_attention_heads)
         )
-        d_qk = self.num_attention_heads * self.d_qk_head
-        d_v = self.num_attention_heads * self.d_v_head
+        d_q = self.num_attention_heads * self.d_qk_head
+        d_k = self.num_key_value_heads * self.d_qk_head
+        d_v = self.num_key_value_heads * self.d_v_head
+        d_out = self.num_attention_heads * self.d_v_head
+        self.q_projection_size = d_q
+        self.k_projection_size = d_k
+        self.value_projection_size = d_v
+        self.attention_output_size = d_out
         # assert config.d_head is not None or self.hidden_size % self.num_attention_heads == 0
 
         # NOTE - if using this base class for actual RWKV, you must override this in rwkv models to get classic RWKV behavior
@@ -43,33 +61,33 @@ class ValueResidualMixin(nn.Module):
         if self.tokenshift_mode == "rwkv":
             ratio_1_to_almost0 = 1.0 - (layer_idx / config.num_hidden_layers)
             with torch.no_grad():
-                ddd_qk = torch.ones(d_qk)
-                linear = torch.zeros(d_qk)
-                for i in range(d_qk):
-                    ddd_qk[i] = i / d_qk
-                    linear[i] = i / (d_qk - 1) - 0.5
+                ddd_q = torch.ones(d_q)
+                for i in range(d_q):
+                    ddd_q[i] = i / d_q
+
+                ddd_k = torch.ones(d_k)
+                for i in range(d_k):
+                    ddd_k[i] = i / d_k
 
                 ddd_v = torch.ones(d_v)
-                linear = torch.zeros(d_v)
                 for i in range(d_v):
                     ddd_v[i] = i / d_v
-                    linear[i] = i / (d_v - 1) - 0.5
 
             self.x_q = set_label(
                 "scalars",
-                nn.Parameter(1.0 - torch.pow(ddd_qk, 0.2 * ratio_1_to_almost0)),
+                nn.Parameter(1.0 - torch.pow(ddd_q, 0.2 * ratio_1_to_almost0)),
             )
             self.x_k = set_label(
                 "scalars",
-                nn.Parameter(1.0 - torch.pow(ddd_qk, 0.7 * ratio_1_to_almost0)),
+                nn.Parameter(1.0 - torch.pow(ddd_k, 0.7 * ratio_1_to_almost0)),
             )
             self.x_v = set_label(
                 "scalars",
                 nn.Parameter(1.0 - torch.pow(ddd_v, 0.7 * ratio_1_to_almost0)),
             )
 
-        self.c_q = set_label("matrix_params", nn.Linear(self.hidden_size, d_qk, bias=False))
-        self.c_k = set_label("matrix_params", nn.Linear(self.hidden_size, d_qk, bias=False))
+        self.c_q = set_label("matrix_params", nn.Linear(self.hidden_size, d_q, bias=False))
+        self.c_k = set_label("matrix_params", nn.Linear(self.hidden_size, d_k, bias=False))
         self.c_v = set_label("matrix_params", nn.Linear(self.hidden_size, d_v, bias=False))
 
         if qk_norm:
@@ -80,7 +98,7 @@ class ValueResidualMixin(nn.Module):
             self.ln_k = nn.Identity()
 
         self.c_proj = set_label(
-            "matrix_params", nn.Linear(d_v, self.hidden_size, bias=False)
+            "matrix_params", nn.Linear(d_out, self.hidden_size, bias=False)
         )
         with torch.no_grad():
             self.c_proj.weight.zero_()
@@ -139,6 +157,13 @@ class ValueResidualMixin(nn.Module):
                         torch.zeros(1, 1, d_v) + 0.73 - linear.view(1, 1, d_v) * 0.4
                     ),
                 )
+                if (
+                    value_residual_mode == "rwkv_post_tokenshift"
+                    and self.value_projection_size != self.hidden_size
+                ):
+                    self.x_v_hidden = set_label(
+                        "scalars", nn.Parameter(torch.zeros(self.hidden_size))
+                    )
 
     _CACHE_Q_FINAL = "att_q_final_token"
     _CACHE_K_FINAL = "att_k_final_token"
@@ -203,8 +228,8 @@ class ValueResidualMixin(nn.Module):
         )
 
         q = q.reshape(batch_size, seq_len, self.num_attention_heads, -1)
-        k = k.reshape(batch_size, seq_len, self.num_attention_heads, -1)
-        v = v.reshape(batch_size, seq_len, self.num_attention_heads, -1)
+        k = k.reshape(batch_size, seq_len, self.num_key_value_heads, -1)
+        v = v.reshape(batch_size, seq_len, self.num_key_value_heads, -1)
 
         q = self.ln_q(q)
         k = self.ln_k(k)
@@ -237,19 +262,23 @@ class ValueResidualMixin(nn.Module):
         x_prior_token: torch.Tensor | None = None,
     ) -> torch.Tensor:
         batch_size, seq_len, _ = x.size()
-        x_heads = x.reshape(batch_size, seq_len, self.num_attention_heads, self.d_v_head)
-        prev_x_heads = None
-        if x_prior_token is not None:
-            prev_x_heads = x_prior_token.reshape(
-                batch_size, 1, self.num_attention_heads, self.d_v_head
-            )
-        x_heads = apply_token_shift(
-            x_heads,
-            self.x_v.view(1, 1, self.num_attention_heads, self.d_v_head),
-            prev_x_heads,
+        x_shift = (
+            self.x_v
+            if self.value_projection_size == self.hidden_size
+            else self.x_v_hidden
+        )
+        x = apply_token_shift(
+            x,
+            x_shift.view(1, 1, self.hidden_size),
+            x_prior_token,
             fallback=self.rwkv_tokenshift_fallback,
         )
-        return x_heads.reshape_as(x)
+        return x
+
+    def _repeat_kv_for_query_heads(self, x: torch.Tensor) -> torch.Tensor:
+        if self.kv_group_size == 1:
+            return x
+        return x.repeat_interleave(self.kv_group_size, dim=1)
 
     def maybe_apply_value_residual_post_tokenshift(
         self,

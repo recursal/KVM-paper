@@ -12,7 +12,7 @@ train:
     shuffle_seed: 42
   val_data:
     data_packing: pad
-    dataset: 'robbiegwaldd/dclm-10B'
+    dataset: 'SmerkyG/dclm-10B'
     device_batch_size: 16
     min_document_chars: 4096
     sequence_length: 4096

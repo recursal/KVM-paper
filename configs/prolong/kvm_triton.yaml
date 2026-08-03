@@ -1,0 +1,4 @@
+model:
+  # Layer this after a KVM model config to select the optimized Triton
+  # prefill/backward/training implementation and optimized cached decode.
+  token_mixer_class_path: model.kvm_triton_mixer.SequenceMixer

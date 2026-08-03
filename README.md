@@ -55,7 +55,11 @@ See configuration classes extending pydantic BaseModel in `train.py` and `model/
 
 ## running it
 
-Example training scripts are provided in `scripts/training_runs.sh` This directory also includes the scripts used to run the evals in the paper.
+Example training scripts are provided in `scripts/training_runs.sh` This directory also includes the scripts used to run the evals in the paper. `scripts/benchmark_kvm.py` can be used for running kernel performance benchmarks.
+
+## optimized Triton KVM kernels
+
+The eager paper implementation is `model.kvm_mixer.SequenceMixer`. The optimized MHA prefill, backward, and training use `model.kvm_triton_mixer.SequenceMixer` - append `configs/prolong/kvm_triton.yaml` after a KVM model config to select it. For more information, see [`docs/kvm_triton_kernels.md`](docs/kvm_triton_kernels.md) for more details on the kernels.
 
 
 ## Citation
@@ -63,9 +67,9 @@ Example training scripts are provided in `scripts/training_runs.sh` This directo
 If you use this code or find our work valuable, please consider citing Key-Value Means:
 
 ```bibtex
-@misc{goldstein2026keyvaluemeans,
-      title={Key-Value Means}, 
-      author={Daniel Goldstein and Eugene Cheah},
+@misc{goldstein2026keyvaluemeanstransformersexpandable,
+      title={Key-Value Means: Transformers with Expandable Block-Recurrent Compressed Memory}, 
+      author={Daniel Goldstein and Navneel Singhal and Eugene Cheah},
       year={2026},
       eprint={2605.09877},
       archivePrefix={arXiv},

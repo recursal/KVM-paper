@@ -106,7 +106,8 @@ class SequenceMixer(ValueResidualMixin):
 
         if self.config.kvm_use_merge_gate_keys or self.config.kvm_use_merge_gate_values:
             self.key_weighting = set_label(
-                "matrix_params", nn.Linear(config.hidden_size, self.num_attention_heads, bias=False)
+                "matrix_params",
+                nn.Linear(config.hidden_size, self.num_key_value_heads, bias=False),
             )
         if self.config.kvm_use_head_temps:
             self.front_head_temp = set_label(
@@ -170,6 +171,26 @@ class SequenceMixer(ValueResidualMixin):
         )
         return max(0, bswa_end - (self.n_bswa_chunks * self.chunk_len))
 
+    def _sdpa_with_repeated_kv(
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        *,
+        attn_mask: torch.Tensor | None = None,
+        is_causal: bool = False,
+        key_temperature: torch.Tensor | float = 1.0,
+    ) -> torch.Tensor:
+        k = self._repeat_kv_for_query_heads(k)
+        v = self._repeat_kv_for_query_heads(v)
+        return F.scaled_dot_product_attention(
+            q,
+            k * key_temperature,
+            v,
+            attn_mask=attn_mask,
+            is_causal=is_causal,
+        )
+
     def _attend_with_state_and_bswa(
         self,
         q: torch.Tensor,
@@ -179,6 +200,15 @@ class SequenceMixer(ValueResidualMixin):
         s_v: torch.Tensor,
         s_vlen: torch.Tensor,
     ) -> torch.Tensor:
+        s_k_norm = self._repeat_kv_for_query_heads(self.ln_s_k(s_k))
+        bswa_k = self._repeat_kv_for_query_heads(bswa_k)
+        if self.config.kvm_use_vlens:
+            s_v_norm = (F.normalize(s_v.float(), dim=-1) * s_vlen).bfloat16()
+        else:
+            s_v_norm = s_v / s_vlen
+        s_v_norm = self._repeat_kv_for_query_heads(s_v_norm)
+        bswa_v = self._repeat_kv_for_query_heads(bswa_v)
+
         if self.config.kvm_use_head_temps:
             state_head_temp = self.state_head_temp.view(1, self.num_attention_heads, 1, 1)
             front_head_temp = self.front_head_temp.view(1, self.num_attention_heads, 1, 1)
@@ -186,15 +216,9 @@ class SequenceMixer(ValueResidualMixin):
             state_head_temp = 1.0
             front_head_temp = 1.0
 
-        s_k_norm = self.ln_s_k(s_k)
         k_star = torch.cat(
             [s_k_norm * state_head_temp, bswa_k * front_head_temp], dim=2
         )
-
-        if self.config.kvm_use_vlens:
-            s_v_norm = (F.normalize(s_v.float(), dim=-1) * s_vlen).bfloat16()
-        else:
-            s_v_norm = s_v / s_vlen
         v_star = torch.cat([s_v_norm, bswa_v], dim=2)
 
         causal_mask = _lower_right_causal_mask(
@@ -359,11 +383,13 @@ class SequenceMixer(ValueResidualMixin):
 
         if self.config.kvm_use_merge_gate_keys or self.config.kvm_use_merge_gate_values:
             merge_gate = 1.0 + F.elu(
-                self.key_weighting(x).view(batch_size, q_seq_len, self.num_attention_heads, 1)
+                self.key_weighting(x).view(
+                    batch_size, q_seq_len, self.num_key_value_heads, 1
+                )
             ).transpose(1, 2)
         else:
             merge_gate = torch.ones(
-                (batch_size, self.num_attention_heads, q_seq_len, 1),
+                (batch_size, self.num_key_value_heads, q_seq_len, 1),
                 device=x.device,
                 dtype=torch.float,
             )
@@ -396,10 +422,11 @@ class SequenceMixer(ValueResidualMixin):
             front_head_temp = 1.0
         front_bswa_len = min(prefill_len, bswa_len)
         outs = [
-            F.scaled_dot_product_attention(
+            self._sdpa_with_repeated_kv(
                 q[:, :, :front_bswa_len],
-                k[:, :, :front_bswa_len] * front_head_temp,
+                k[:, :, :front_bswa_len],
                 v[:, :, :front_bswa_len],
+                key_temperature=front_head_temp,
                 is_causal=True,
             )
         ]
@@ -555,7 +582,6 @@ class SequenceMixer(ValueResidualMixin):
         **kwargs,
     ):
         batch_size, _, q_seq_len, _ = q.size()
-        bswa_len = self.n_bswa_chunks * self.chunk_len
 
         cache_states = (
             past_key_values.get_states(self.layer_idx)
@@ -655,26 +681,17 @@ class SequenceMixer(ValueResidualMixin):
             :, :, full_bswa_rel_begin:full_bswa_rel_end, :
         ]
 
-        # if the new total length still fits in BSWA, we can attend to everything with a single efficient call; otherwise we need to include state in attention
-        if new_total_len <= bswa_len:
-            if self.config.kvm_use_head_temps:
-                front_head_temp = self.front_head_temp.view(1, self.num_attention_heads, 1, 1)
-            else:
-                front_head_temp = 1.0
-            causal_mask = _lower_right_causal_mask(
-                int(q.size(2)), int(new_bswa_k.size(2)), device=q.device
-            )
-            out = F.scaled_dot_product_attention(
-                q,
-                new_bswa_k * front_head_temp,
-                new_bswa_v,
-                attn_mask=causal_mask,
-                is_causal=False,
-            )
-        else:
-            out = self._attend_with_state_and_bswa(
-                q, new_bswa_k, new_bswa_v, s_k, s_v, s_vlen
-            )
+        # State becomes active only after its source tokens leave the exact BSWA
+        # window. Before then, an empty state avoids attending to those tokens twice.
+        active_state_len = int(s_k.size(2)) if new_bswa_begin > 0 else 0
+        out = self._attend_with_state_and_bswa(
+            q,
+            new_bswa_k,
+            new_bswa_v,
+            s_k[:, :, :active_state_len],
+            s_v[:, :, :active_state_len],
+            s_vlen[:, :, :active_state_len],
+        )
 
         y = out.transpose(1, 2).contiguous().view(batch_size, q_seq_len, -1)
         y = self.c_proj(y)
